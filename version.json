@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "download_url": "https://raw.githubusercontent.com/H-ZHOWEI/miaobanqi/main/dist/MiaoBanQi.exe",
+  "notes": "首个正式版：多任务软件联动启动、智能触发条件、托盘常驻、程序内更新。",
+  "sha256": "553b96cc0ed751cbb23fdc930d8123a9fe9b5775920fc7e14c600fb58e26d4dc",
+  "size": 30905558,
+  "pub_date": "2026-11-25",
+  "mandatory": false
+}
