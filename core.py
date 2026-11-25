@@ -30,7 +30,7 @@ IS_WIN = sys.platform == "win32"
 # ---------------------------------------------------------------------------
 APP_NAME = "喵伴启"
 APP_EN = "MiaoBanQi"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 APP_TAGLINE = "智能软件联动启动器"
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".miaobanqi")

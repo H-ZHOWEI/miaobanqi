@@ -69,7 +69,7 @@ def build():
     data = {
         "version": APP_VERSION,
         "download_url": f"https://raw.githubusercontent.com/H-ZHOWEI/miaobanqi/main/dist/{APP_EN}.exe",
-        "notes": "首个正式版：多任务软件联动启动、智能触发条件、托盘常驻、程序内更新。",
+        "notes": "新增程序路径从运行中选择（自动取完整路径）；全部下拉框中文化。",
         "sha256": sha256(EXE),
         "size": size,
         "pub_date": date.today().isoformat(),

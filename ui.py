@@ -194,9 +194,11 @@ def browse_dir(var):
 class ProcessPicker(tk.Toplevel):
     """列出当前正在运行的程序，供用户直接选择，无需手打进程名"""
 
-    def __init__(self, parent):
+    def __init__(self, parent, path_only: bool = False):
         super().__init__(parent)
-        self.title("选择正在运行的程序")
+        self.path_only = path_only
+        self.title("选择正在运行的程序（获取程序路径）" if path_only
+                   else "选择正在运行的程序")
         self.geometry("900x600")
         self.minsize(780, 500)
         self.configure(bg=PANEL)
@@ -246,16 +248,23 @@ class ProcessPicker(tk.Toplevel):
 
         bottom = ttk.Frame(self, padding=(14, 10))
         bottom.pack(fill="x")
-        tk.Label(bottom, text="选中后填入：", bg=PANEL, font=_font()).pack(side="left")
-        self.fill_mode = tk.StringVar(value="进程名（精确匹配，推荐）")
-        ttk.Combobox(bottom, textvariable=self.fill_mode, state="readonly", width=30,
-                     values=["进程名（精确匹配，推荐）", "进程名（包含匹配）",
-                             "窗口标题（包含匹配）", "进程完整路径（精确匹配）"],
-                     font=_font()).pack(side="left", padx=6)
+        if self.path_only:
+            # 取路径模式：隐藏"填入方式"选择，自动取程序完整路径
+            self.fill_mode = tk.StringVar(value="进程完整路径（精确匹配）")
+            tk.Label(bottom, text="选中后自动填入该程序的完整路径",
+                     bg=PANEL, font=_font(), fg=ACCENT_DARK).pack(side="left")
+            tip = "提示：若某程序路径为空（系统进程或权限不足），请选择其他程序"
+        else:
+            tk.Label(bottom, text="选中后填入：", bg=PANEL, font=_font()).pack(side="left")
+            self.fill_mode = tk.StringVar(value="进程名（精确匹配，推荐）")
+            ttk.Combobox(bottom, textvariable=self.fill_mode, state="readonly", width=30,
+                         values=["进程名（精确匹配，推荐）", "进程名（包含匹配）",
+                                 "窗口标题（包含匹配）", "进程完整路径（精确匹配）"],
+                         font=_font()).pack(side="left", padx=6)
+            tip = "提示：关闭再打开程序后 PID 会变化，所以一般用进程名而不是 PID"
         ttk.Button(bottom, text="取消", command=self.destroy, width=9).pack(side="right", padx=6)
         ttk.Button(bottom, text="确定", command=self._choose, width=9).pack(side="right")
-        tk.Label(bottom, text="提示：关闭再打开程序后 PID 会变化，所以一般用进程名而不是 PID",
-                 bg=PANEL, fg=MUTED, font=_font(9)).pack(side="left", padx=14)
+        tk.Label(bottom, text=tip, bg=PANEL, fg=MUTED, font=_font(9)).pack(side="left", padx=14)
 
     def _reload(self):
         self._rows = process_list()
@@ -301,9 +310,12 @@ class ProcessPicker(tk.Toplevel):
             self.result = {"field": "title", "value": r["title"], "match": "contains"}
         else:
             if not r["exe"]:
-                messagebox.showinfo(APP_NAME, "无法读取该进程路径（系统进程或权限不足），请改用进程名", parent=self)
+                hint = "无法读取该进程路径（系统进程或权限不足），请换一个程序" if self.path_only \
+                    else "无法读取该进程路径（系统进程或权限不足），请改用进程名"
+                messagebox.showinfo(APP_NAME, hint, parent=self)
                 return
-            self.result = {"field": "path", "value": r["exe"], "match": "exact"}
+            self.result = {"field": "path", "value": r["exe"], "match": "exact",
+                           "pid": r["pid"], "name": r["name"]}
         self.destroy()
 
 
@@ -357,13 +369,33 @@ class ActionEditor(tk.Toplevel):
         for w in list(self.body.winfo_children()):
             w.destroy()
 
+    def _pick_running_path(self):
+        """从运行中的程序选择，自动填入该程序的完整路径"""
+        picker = ProcessPicker(self, path_only=True)
+        if not picker.result:
+            return
+        path = picker.result.get("value", "")
+        self.v_path.set(path)
+        # 若工作目录为空，自动用该程序所在目录（很多程序依赖相对路径）
+        if path and not self.v_cwd.get().strip():
+            self.v_cwd.set(os.path.dirname(path))
+
     def _render(self):
         self._clear()
         t = self._type.get()
         r = 0
         if t == "launch":
-            bound_entry(self.body, "程序路径", self.v_path, r, width=42,
-                        browse=lambda v: browse_file(v, True))
+            # 程序路径：浏览文件 + 从运行中的程序选择（自动取完整路径）
+            tk.Label(self.body, text="程序路径", font=_font(), bg=PANEL, fg=TEXT).grid(
+                row=r, column=0, sticky="w", padx=(0, 8), pady=6)
+            ttk.Entry(self.body, textvariable=self.v_path, width=42,
+                      font=_font()).grid(row=r, column=1, sticky="ew", pady=6)
+            btn_box = ttk.Frame(self.body)
+            btn_box.grid(row=r, column=2, padx=(6, 0), sticky="w")
+            ttk.Button(btn_box, text="浏览...", width=8,
+                       command=lambda: browse_file(self.v_path, True)).pack(side="left")
+            ttk.Button(btn_box, text="从运行程序选择", width=16,
+                       command=self._pick_running_path).pack(side="left", padx=4)
             bound_entry(self.body, "启动参数", self.v_args, r + 1, width=42)
             bound_entry(self.body, "工作目录", self.v_cwd, r + 2, width=42,
                         browse=browse_dir)
