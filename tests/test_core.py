@@ -206,5 +206,63 @@ class TestColdStart(unittest.TestCase):
         self.assertEqual(len(self.fired), 0)
 
 
+class TestBackgroundAppWindow(unittest.TestCase):
+    """Edge/Chrome/微信等后台常驻程序：靠窗口从无到有识别"打开软件"。"""
+
+    def setUp(self):
+        from core import MonitorEngine
+        self.fired = []
+        self.logs = []
+        self.cfg = ConfigManager(os.path.join(tempfile.gettempdir(), "mbq-window-test.json"))
+        self.eng = MonitorEngine(self.cfg, lambda lv, msg: self.logs.append((lv, msg)),
+                                 on_task_fired=lambda t: self.fired.append(t.name))
+        self.eng._execute = lambda t: None
+        self.task = Task(
+            name="后台程序联动",
+            trigger=Trigger(field="name", value="a.exe", match="exact"),
+            conditions=Conditions(frequency="on_close", debounce_ms=0, cooldown_sec=0),
+            actions=[Action(type="notify", value="test")])
+
+    def _tick_with(self, pids, titles):
+        procs = {pid: {"name": "a.exe", "exe": "C:\\a.exe"} for pid in pids}
+        with patch("core.process_snapshot", return_value=procs), \
+             patch("core.window_titles", return_value=titles):
+            self.eng._tick()
+
+    def test_window_appears_triggers(self):
+        """进程一直在但窗口从无到有 → 触发（Edge 场景）"""
+        self.eng.apply_tasks([self.task], prime=True)
+        self._tick_with([100], {})                       # 后台常驻，无窗口
+        self.assertEqual(len(self.fired), 0)
+        self._tick_with([100], {100: ["新标签页"]})      # 用户打开窗口
+        self.assertEqual(len(self.fired), 1)
+        self.assertTrue(any("窗口打开" in m for _, m in self.logs))
+
+    def test_window_stays_open_no_repeat(self):
+        """窗口一直开着，切回/新标签/额外进程都不触发"""
+        self.eng.apply_tasks([self.task], prime=True)
+        self._tick_with([100], {})
+        self._tick_with([100], {100: ["新标签页"]})                 # 触发一次
+        self._tick_with([100], {100: ["新标签页", "另一个标签"]})    # 开新标签
+        self._tick_with([100, 101], {100: ["新标签页"]})            # 额外进程
+        self.assertEqual(len(self.fired), 1)
+
+    def test_window_close_reopen_triggers_again(self):
+        """关窗后进程仍在，再开窗口 → 再次触发"""
+        self.eng.apply_tasks([self.task], prime=True)
+        self._tick_with([100], {})
+        self._tick_with([100], {100: ["窗口一"]})   # 第一次
+        self._tick_with([100], {})                  # 关窗，但进程还在
+        self._tick_with([100], {100: ["窗口二"]})   # 再开 → 第二次
+        self.assertEqual(len(self.fired), 2)
+
+    def test_already_open_window_at_start_no_trigger(self):
+        """启动时窗口已经开着 → 不触发"""
+        self.eng.apply_tasks([self.task], prime=True)
+        for _ in range(4):
+            self._tick_with([100], {100: ["已打开的窗口"]})
+        self.assertEqual(len(self.fired), 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

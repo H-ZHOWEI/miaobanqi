@@ -69,7 +69,7 @@ def build():
     data = {
         "version": APP_VERSION,
         "download_url": f"https://raw.githubusercontent.com/H-ZHOWEI/miaobanqi/main/dist/{APP_EN}.exe",
-        "notes": "新增单实例保护：重复双击不再堆积后台进程和托盘图标，自动激活已有窗口。",
+        "notes": "修复Edge等后台常驻软件无法触发：冷启动判定增加“窗口从无到有”路径。",
         "sha256": sha256(EXE),
         "size": size,
         "pub_date": date.today().isoformat(),

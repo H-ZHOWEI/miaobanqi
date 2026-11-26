@@ -30,7 +30,7 @@ IS_WIN = sys.platform == "win32"
 # ---------------------------------------------------------------------------
 APP_NAME = "喵伴启"
 APP_EN = "MiaoBanQi"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 APP_TAGLINE = "智能软件联动启动器"
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".miaobanqi")
@@ -724,6 +724,10 @@ class MonitorEngine(threading.Thread):
                 st["phase"] = "armed" if not pids else "fired"
                 # 启动时目标不存在 = 已经处于"关闭"状态，之后出现才算冷启动
                 st["ever_closed"] = not pids
+                # 窗口维度：后台常驻程序（Edge 等）进程一直在但窗口可能没有
+                has_win = self._has_matching_window(task, set(pids), titles)
+                st["had_window"] = has_win
+                st["ever_no_window"] = not has_win
             self._prime_on_start = False
 
         for task in self._tasks_snapshot:
@@ -734,9 +738,21 @@ class MonitorEngine(threading.Thread):
             st = self._state.setdefault(task.id, self._new_state())
             pids = self._match_pids(task, procs, titles)
             pids_set = set(pids)
+            has_window = self._has_matching_window(task, pids_set, titles)
+
+            # 窗口曾消失过 → 之后再次出现窗口就算一次"打开软件"
+            if not has_window:
+                st["ever_no_window"] = True
+            # 本次是"窗口从无到有"的跃变，锁存进 window_pending
+            if has_window and not st["had_window"] and st["ever_no_window"]:
+                st["window_pending"] = True
+            if not has_window:
+                st["window_pending"] = False
 
             freq = task.conditions.frequency
-            should_fire, reason = self._decide(task, st, pids_set, now, procs)
+            should_fire, reason = self._decide(task, st, pids_set, now, procs,
+                                               has_window, st["window_pending"])
+            st["had_window"] = has_window
 
             # 清理已消失进程的"见过"记录，避免 PID 复用误判
             st["seen_pids"] &= pids_set
@@ -753,6 +769,7 @@ class MonitorEngine(threading.Thread):
                 continue
 
             st["last_fire"] = now
+            st["window_pending"] = False  # 本次触发已消费窗口冷启动
             task.last_fired = stamp_str()
             task.fire_count += 1
             self.on_log("触发", f"[{task.name}] {reason}")
@@ -785,24 +802,48 @@ class MonitorEngine(threading.Thread):
             "last_fire": 0.0,
             "seen_pids": set(),
             "observed": set(),
-            # 关键：是否曾观察到目标进程"完全消失"。
-            # 只有出现过 有→无→有 的跃变，才算"首次打开 A"。
-            # A 一直运行时（含用户再次双击/切回窗口/产生额外 PID）恒为 False。
+            # 进程冷启动：是否曾观察到目标进程"完全消失"（有→无→有）
             "ever_closed": False,
+            # 窗口冷启动：是否曾观察到目标"没有窗口"。
+            # Edge/Chrome/微信等后台常驻程序关窗后进程仍在，
+            # 只能靠"窗口从无到有"识别用户真正打开软件。
+            "ever_no_window": False,
+            "had_window": False,
+            # 窗口冷启动锁存：一旦观察到窗口从无到有，保持"待触发"直到真正触发，
+            # 否则防抖期间 window_cold 变 False 会让流程半途卡死。
+            "window_pending": False,
         }
 
+    @staticmethod
+    def _has_matching_window(task: Task, pids: Set[int],
+                             titles: Dict[int, List[str]]) -> bool:
+        """匹配到的进程是否存在可见窗口（最小化也算存在）。"""
+        for pid in pids:
+            for title in titles.get(pid, []):
+                if title and title.strip():
+                    return True
+        return False
+
     def _decide(self, task: Task, st: dict, pids: Set[int], now: float,
-                procs: Dict[int, dict]) -> tuple:
+                procs: Dict[int, dict], has_window: bool = False,
+                window_cold: bool = False) -> tuple:
         """判断本次是否应触发，返回 (bool, 原因)"""
         if not pids:
             return False, ""
 
         # ===== 冷启动守卫（核心规则，对所有触发频率生效）=====
-        # 必须亲眼见过 A 从"完全不存在"变为"出现"，才算一次"打开 A"。
-        # A 一直开着时，用户再次双击图标、切回窗口、打开新标签/文档
-        # 产生的额外 PID 都不满足此条件，因此绝不会误触发 B。
-        if not st.get("ever_closed", False):
+        # 两条路径任满足其一才算"打开 A"：
+        #   1) 进程从无到有（普通软件）
+        #   2) 窗口从无到有（Edge/Chrome/微信等后台常驻软件）
+        # A 一直开着且窗口也一直开着时，两者都不满足，不误触发 B。
+        process_cold = st.get("ever_closed", False)
+        win_cold_ok = window_cold and st.get("ever_no_window", False)
+        if not process_cold and not win_cold_ok:
             return False, ""
+        # 窗口冷启动时把状态机复位，让它像"重新打开"一样走一遍触发流程
+        if win_cold_ok and not process_cold and st["phase"] == "fired":
+            st["phase"] = "armed"
+            st["pending_since"] = 0
 
         cond = task.conditions
         # 防重复：软件自己刚启动的进程不再作为触发源（15 秒内）
@@ -863,7 +904,11 @@ class MonitorEngine(threading.Thread):
             "once_per_day": "今日首次检测到软件启动",
             "once_ever": "首次检测到软件启动",
         }.get(freq, "检测到软件启动")
-        return True, f"{label} (PID {','.join(str(x) for x in sorted(pids))})"
+        if window_cold and not st.get("ever_closed", False):
+            detail = "检测到软件窗口打开（后台常驻程序）"
+        else:
+            detail = "PID " + ",".join(str(x) for x in sorted(pids))
+        return True, f"{label} ({detail})"
 
     def _conditions_ok(self, task: Task, procs: Dict[int, dict]) -> bool:
         cond = task.conditions

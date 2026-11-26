@@ -1,9 +1,9 @@
 {
-  "version": "1.0.3",
+  "version": "1.0.4",
   "download_url": "https://raw.githubusercontent.com/H-ZHOWEI/miaobanqi/main/dist/MiaoBanQi.exe",
-  "notes": "新增单实例保护：重复双击不再堆积后台进程和托盘图标，自动激活已有窗口。",
-  "sha256": "3db3a4ce52f9c4e50f1ac8884494a610644dc0d60ac29a56938c882c983e5fc0",
-  "size": 30906132,
+  "notes": "修复Edge等后台常驻软件无法触发：冷启动判定增加“窗口从无到有”路径。",
+  "sha256": "128643386b3a86577d52da2fea4dadfeac9f78193423a2a37bc80bcddab25489",
+  "size": 30907555,
   "pub_date": "2026-11-26",
   "mandatory": false
 }
