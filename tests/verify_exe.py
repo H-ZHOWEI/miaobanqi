@@ -35,11 +35,19 @@ def visible_titles():
 
 proc = subprocess.Popen([EXE])
 try:
-    time.sleep(5)
-    titles = visible_titles()
+    # 单文件 exe 首次解压 + 启动检查可能较慢，轮询等待而非固定 5 秒
+    main_ok = False
+    err_bad = False
+    titles = []
+    deadline = time.time() + 20
+    while time.time() < deadline:
+        titles = visible_titles()
+        main_ok = any("喵伴启" in t for t in titles)
+        err_bad = any(("启动失败" in t or "Traceback" in t) for t in titles)
+        if main_ok or err_bad:
+            break
+        time.sleep(0.5)
     print("可见窗口：", titles)
-    main_ok = any("喵伴启" in t for t in titles)
-    err_bad = any(("启动失败" in t or "Traceback" in t) for t in titles)
     print(f"主窗口正常: {main_ok} | 出现错误窗口: {err_bad}")
     sys.exit(0 if main_ok and not err_bad else 1)
 finally:

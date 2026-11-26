@@ -1,9 +1,9 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "download_url": "https://raw.githubusercontent.com/H-ZHOWEI/miaobanqi/main/dist/MiaoBanQi.exe",
-  "notes": "新增程序路径从运行中选择（自动取完整路径）；全部下拉框中文化。",
-  "sha256": "33a4bc5a22ad1709a685aa33ccc527699b96605d7ebf6418c678f8051175db10",
-  "size": 30906088,
-  "pub_date": "2026-11-25",
+  "notes": "严格仅首次打开A才触发B：A已运行时再次点开/切回窗口不会误触发；移除反向选项。",
+  "sha256": "6d09b4df203b297ed13f08aad45311552731bb3da5e5defe0dc8b5a4554091a2",
+  "size": 30906749,
+  "pub_date": "2026-11-26",
   "mandatory": false
 }

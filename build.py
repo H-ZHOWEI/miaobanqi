@@ -69,7 +69,7 @@ def build():
     data = {
         "version": APP_VERSION,
         "download_url": f"https://raw.githubusercontent.com/H-ZHOWEI/miaobanqi/main/dist/{APP_EN}.exe",
-        "notes": "新增程序路径从运行中选择（自动取完整路径）；全部下拉框中文化。",
+        "notes": "严格仅首次打开A才触发B：A已运行时再次点开/切回窗口不会误触发；移除反向选项。",
         "sha256": sha256(EXE),
         "size": size,
         "pub_date": date.today().isoformat(),

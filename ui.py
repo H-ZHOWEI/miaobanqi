@@ -568,34 +568,35 @@ class TaskEditor(tk.Toplevel):
             ttk.Checkbutton(wf, text="周" + lab, variable=v).pack(side="left", padx=2)
 
         self.v_freq = label_combo(f3, "触发频率", FREQUENCY_MODES, c.frequency, 4, 0)
+        # StringVar 必须持久持有，否则会被 GC 回收导致输入值丢失
+        self._sv_interval = tk.StringVar(value=str(c.interval_sec))
         self.v_interval = ttk.Spinbox(f3, from_=1, to=86400, width=12,
-                                      textvariable=tk.StringVar(value=str(c.interval_sec)),
-                                      font=_font())
+                                      textvariable=self._sv_interval, font=_font())
         self.v_interval.grid(row=5, column=1, sticky="w", pady=6)
         tk.Label(f3, text="间隔秒数（仅“定时触发”用）", bg=PANEL, fg=MUTED,
                  font=_font(9)).grid(row=5, column=2, sticky="w")
+        self._sv_debounce = tk.StringVar(value=str(c.debounce_ms))
         self.v_debounce = ttk.Spinbox(f3, from_=0, to=30000, width=12,
-                                      textvariable=tk.StringVar(value=str(c.debounce_ms)),
-                                      font=_font())
+                                      textvariable=self._sv_debounce, font=_font())
         self.v_debounce.grid(row=6, column=1, sticky="w", pady=6)
         tk.Label(f3, text="防抖毫秒（建议 300~800，避免短暂进程误触发）",
                  bg=PANEL, fg=MUTED, font=_font(9)).grid(row=6, column=2, sticky="w")
+        self._sv_predelay = tk.StringVar(value=str(c.pre_delay_ms))
         self.v_predelay = ttk.Spinbox(f3, from_=0, to=300000, width=12,
-                                      textvariable=tk.StringVar(value=str(c.pre_delay_ms)),
-                                      font=_font())
+                                      textvariable=self._sv_predelay, font=_font())
         self.v_predelay.grid(row=7, column=1, sticky="w", pady=6)
         tk.Label(f3, text="触发后延时执行毫秒", bg=PANEL, fg=MUTED,
                  font=_font(9)).grid(row=7, column=2, sticky="w")
+        self._sv_cooldown = tk.StringVar(value=str(c.cooldown_sec))
         self.v_cooldown = ttk.Spinbox(f3, from_=0, to=86400, width=12,
-                                      textvariable=tk.StringVar(value=str(c.cooldown_sec)),
-                                      font=_font())
+                                      textvariable=self._sv_cooldown, font=_font())
         self.v_cooldown.grid(row=8, column=1, sticky="w", pady=6)
         tk.Label(f3, text="最小触发间隔秒", bg=PANEL, fg=MUTED,
                  font=_font(9)).grid(row=8, column=2, sticky="w")
-        self.v_already = tk.BooleanVar(value=c.fire_if_already_running)
-        ttk.Checkbutton(f3, text="软件启动时若目标已在运行，也触发一次",
-                        variable=self.v_already).grid(row=9, column=1, columnspan=2,
-                                                      sticky="w", pady=8)
+        tk.Label(f3, text="触发规则：只有 A 从完全关闭到重新打开才算“打开 A”，此时才启动 B；"
+                          "A 已在运行时再次点开、切回窗口都不会触发 B。",
+                 bg=PANEL, fg=ACCENT, font=_font(9)).grid(
+                     row=9, column=0, columnspan=3, sticky="w", pady=(10, 4))
 
         btns = ttk.Frame(self, padding=(16, 8))
         btns.pack(fill="x", side="bottom")
@@ -683,7 +684,7 @@ class TaskEditor(tk.Toplevel):
             debounce_ms=_n(self.v_debounce, 400),
             pre_delay_ms=_n(self.v_predelay, 0),
             cooldown_sec=_n(self.v_cooldown, 2),
-            fire_if_already_running=self.v_already.get())
+            fire_if_already_running=False)  # 已移除该选项：仅冷启动才触发
         return t
 
     def _save(self):

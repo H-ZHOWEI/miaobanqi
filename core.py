@@ -30,7 +30,7 @@ IS_WIN = sys.platform == "win32"
 # ---------------------------------------------------------------------------
 APP_NAME = "喵伴启"
 APP_EN = "MiaoBanQi"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 APP_TAGLINE = "智能软件联动启动器"
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".miaobanqi")
@@ -54,11 +54,11 @@ MATCH_MODES = {
     "wildcard": "通配符(* ?)",
 }
 FREQUENCY_MODES = {
-    "on_close": "每次A关闭后重新触发",
-    "every_new_process": "每个新实例都触发",
-    "interval": "运行中每隔一段时间触发",
-    "once_per_day": "每天仅触发一次",
-    "once_ever": "仅触发一次",
+    "on_close": "A每次从关闭到重新打开时触发（推荐）",
+    "every_new_process": "冷启动后每个新进程都触发（高级）",
+    "interval": "A运行中定时重复（非首次打开）",
+    "once_per_day": "每天首次打开A时触发",
+    "once_ever": "一生只触发一次",
 }
 ACTION_TYPES = {
     "launch": "启动程序",
@@ -713,16 +713,17 @@ class MonitorEngine(threading.Thread):
         now = time.time()
 
         if self._prime_on_start:
-            # 启动时已运行的进程标记为"已见过"，避免软件一开就误触发
+            # 启动时已运行的进程一律视为"早就开着"，不得当作一次新的打开。
+            # 这是"仅首次打开 A 才触发 B"的基线：已经运行的 A 不算打开。
             for task in self._tasks_snapshot:
                 pids = self._match_pids(task, procs, titles)
                 st = self._state.setdefault(task.id, self._new_state())
                 st["seen_pids"] = set(pids)
                 st["observed"] = set(pids)
-                st["pending_since"] = now if pids else 0
-                st["phase"] = "fired" if (pids and not task.conditions.fire_if_already_running) else ("armed" if pids else "armed")
-                if pids and task.conditions.fire_if_already_running:
-                    st["phase"] = "armed"
+                st["pending_since"] = 0.0
+                st["phase"] = "armed" if not pids else "fired"
+                # 启动时目标不存在 = 已经处于"关闭"状态，之后出现才算冷启动
+                st["ever_closed"] = not pids
             self._prime_on_start = False
 
         for task in self._tasks_snapshot:
@@ -741,6 +742,8 @@ class MonitorEngine(threading.Thread):
             st["seen_pids"] &= pids_set
             st["observed"] &= pids_set
             if not pids_set:
+                # 目标彻底消失 = 一次完整"关闭"，下次再出现才算冷启动
+                st["ever_closed"] = True
                 st["phase"] = "armed"
                 st["pending_since"] = 0
 
@@ -782,12 +785,23 @@ class MonitorEngine(threading.Thread):
             "last_fire": 0.0,
             "seen_pids": set(),
             "observed": set(),
+            # 关键：是否曾观察到目标进程"完全消失"。
+            # 只有出现过 有→无→有 的跃变，才算"首次打开 A"。
+            # A 一直运行时（含用户再次双击/切回窗口/产生额外 PID）恒为 False。
+            "ever_closed": False,
         }
 
     def _decide(self, task: Task, st: dict, pids: Set[int], now: float,
                 procs: Dict[int, dict]) -> tuple:
         """判断本次是否应触发，返回 (bool, 原因)"""
         if not pids:
+            return False, ""
+
+        # ===== 冷启动守卫（核心规则，对所有触发频率生效）=====
+        # 必须亲眼见过 A 从"完全不存在"变为"出现"，才算一次"打开 A"。
+        # A 一直开着时，用户再次双击图标、切回窗口、打开新标签/文档
+        # 产生的额外 PID 都不满足此条件，因此绝不会误触发 B。
+        if not st.get("ever_closed", False):
             return False, ""
 
         cond = task.conditions
@@ -804,9 +818,17 @@ class MonitorEngine(threading.Thread):
         freq = cond.frequency
 
         if freq == "every_new_process":
+            # 同样遵守"仅首次打开"：只有从完全关闭恢复的那一刻算一次打开；
+            # A 已运行时产生的新 PID 不再触发 B。
+            if st["phase"] != "armed":
+                return False, ""
             fresh = pids - st["seen_pids"]
             st["seen_pids"] |= pids
-            return (True, f"检测到新实例 (PID {','.join(str(x) for x in sorted(fresh))})") if fresh else (False, "")
+            if not fresh:
+                return False, ""
+            st["phase"] = "fired"
+            st["pending_since"] = 0
+            return True, f"检测到新实例 (PID {','.join(str(x) for x in sorted(fresh))})"
 
         if freq == "once_ever":
             if task.fire_count > 0:
