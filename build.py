@@ -69,7 +69,7 @@ def build():
     data = {
         "version": APP_VERSION,
         "download_url": f"https://raw.githubusercontent.com/H-ZHOWEI/miaobanqi/main/dist/{APP_EN}.exe",
-        "notes": "严格仅首次打开A才触发B：A已运行时再次点开/切回窗口不会误触发；移除反向选项。",
+        "notes": "新增单实例保护：重复双击不再堆积后台进程和托盘图标，自动激活已有窗口。",
         "sha256": sha256(EXE),
         "size": size,
         "pub_date": date.today().isoformat(),
